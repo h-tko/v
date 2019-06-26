@@ -85,7 +85,7 @@ fn (s mut Scanner) ident_number() string {
 		if c == `.` {
 			is_float = true
 		}
-		is_good_hex := is_hex && (c == `x` || c == `u` || (c >= `a` && c <= `f`))
+		is_good_hex := is_hex && (c == `x`  || (c >= `a` && c <= `f`))
 		// 1e+3, 1e-3, 1e3
 		if !is_hex && c == `e` {
 			next := s.text[s.pos + 1]
@@ -123,6 +123,18 @@ fn (s mut Scanner) skip_whitespace() {
 	// if s.pos == s.text.len {
 	// return scan_res(EOF, '')
 	// }
+}
+
+fn (s mut Scanner) get_until_start(pos int) string {
+	mut pos_start = pos
+	for ; pos_start >= 0 && s.text[pos_start] != `\n`; pos_start-- {}
+	for ; pos_start < pos && (s.text[pos_start] == ` ` || s.text[pos_start] == `\n`); pos_start++ {}
+	return s.text.substr(pos_start, pos)
+}
+
+// CAO stands for Compound Assignment Operators  (e.g '+=' )
+fn (s mut Scanner) cao_change(operator string) {
+	s.text = s.text.substr(0, s.pos - 2) + ' = ' + s.get_until_start(s.pos - 2) + ' ' + operator + s.text.substr(s.pos + 1, s.text.len)
 }
 
 fn (s mut Scanner) scan() ScanRes {
@@ -213,6 +225,7 @@ fn (s mut Scanner) scan() ScanRes {
 		}
 		else if nextc == `=` {
 			s.pos++
+			s.cao_change('+')
 			return scan_res(PLUS_ASSIGN, '')
 		}
 		return scan_res(PLUS, '')
@@ -223,24 +236,28 @@ fn (s mut Scanner) scan() ScanRes {
 		}
 		else if nextc == `=` {
 			s.pos++
+			s.cao_change('-')
 			return scan_res(MINUS_ASSIGN, '')
 		}
 		return scan_res(MINUS, '')
 	case `*`:
 		if nextc == `=` {
 			s.pos++
+			s.cao_change('*')
 			return scan_res(MULT_ASSIGN, '')
 		}
 		return scan_res(MUL, '')
 	case `^`:
 		if nextc == `=` {
 			s.pos++
+			s.cao_change('^')
 			return scan_res(XOR_ASSIGN, '')
 		}
 		return scan_res(XOR, '')
 	case `%`:
 		if nextc == `=` {
 			s.pos++
+			s.cao_change('%')
 			return scan_res(MOD_ASSIGN, '')
 		}
 		return scan_res(MOD, '')
@@ -287,6 +304,7 @@ fn (s mut Scanner) scan() ScanRes {
 	case `&`:
 		if nextc == `=` {
 			s.pos++
+			s.cao_change('&')
 			return scan_res(AND_ASSIGN, '')
 		}
 		if s.text[s.pos + 1] == `&` {
@@ -301,6 +319,7 @@ fn (s mut Scanner) scan() ScanRes {
 		}
 		if nextc == `=` {
 			s.pos++
+			s.cao_change('|')
 			return scan_res(OR_ASSIGN, '')
 		}
 		return scan_res(PIPE, '')
@@ -347,6 +366,7 @@ fn (s mut Scanner) scan() ScanRes {
 		else if s.text[s.pos + 1] == `>` {
 			if s.text[s.pos + 2] == `=` {
 				s.pos += 2
+				s.cao_change('>>')
 				return scan_res(RIGHT_SHIFT_ASSIGN, '')
 			}
 			s.pos++
@@ -363,6 +383,7 @@ fn (s mut Scanner) scan() ScanRes {
 		else if s.text[s.pos + 1] == `<` {
 			if s.text[s.pos + 2] == `=` {
 				s.pos += 2
+				s.cao_change('<<')
 				return scan_res(LEFT_SHIFT_ASSIGN, '')
 			}
 			s.pos++
@@ -402,6 +423,7 @@ fn (s mut Scanner) scan() ScanRes {
 	case `/`:
 		if nextc == `=` {
 			s.pos++
+			s.cao_change('/')
 			return scan_res(DIV_ASSIGN, '')
 		}
 		if s.text[s.pos + 1] == `/` {

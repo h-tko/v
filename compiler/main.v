@@ -8,7 +8,7 @@ import os
 import time
 
 const (
-	Version = '0.0.12'
+	Version = '0.1.3'
 )
 
 // TODO no caps
@@ -25,7 +25,7 @@ enum BuildMode {
 }
 
 fn vtmp_path() string {
-	return os.home_dir() + '/.vlang$Version/'
+	return os.home_dir() + '/.vlang/'
 }
 
 const (
@@ -73,7 +73,7 @@ mut:
 	is_so      bool
 	is_live    bool // for hot code reloading
 	is_prof    bool // benchmark every function
-	translated bool // `v translated doom.v` are we running V code translated from C? allow globals, ++ expressions, etc
+	translated bool // `v translate doom.v` are we running V code translated from C? allow globals, ++ expressions, etc
 	obfuscate  bool // `v -obf program.v`, renames functions to "f_XXX"
 	lang_dir   string // "~/code/v"
 	is_verbose bool // print extra information with `v.log()`
@@ -84,6 +84,7 @@ mut:
 	out_name   string // "program.exe"
 	is_prod    bool // use "-O2" and skip printlns (TODO I don't thik many people want printlns to disappear in prod buidls)
 	is_repl    bool
+	vroot      string
 }
 
 fn main() {
@@ -98,6 +99,10 @@ fn main() {
 		println(HelpText)
 		return
 	}
+	if 'translate' in args {
+		println('Translating C to V will be available in V 0.3') 
+		return 
+	} 
 	// TODO quit if the compiler is too old 
 	// u := os.file_last_mod_unix('/var/tmp/alex')
 	// Create a temp directory if it's not there. 
@@ -159,19 +164,6 @@ fn (c mut V) compile() {
 	}
 	// Main pass
 	cgen.run = RUN_MAIN
-	if c.os == MAC {
-		cgen.genln('#define mac (1) ')
-		// cgen.genln('#include <pthread.h>')
-	}
-	if c.os == LINUX {
-		cgen.genln('#define linux (1) ')
-		cgen.genln('#include <pthread.h>')
-	}
-	if c.os == WINDOWS {
-		cgen.genln('#define windows (1) ')
-		// cgen.genln('#include <WinSock2.h>')
-		cgen.genln('#include <windows.h> ')
-	}
 	if c.is_play {
 		cgen.genln('#define VPLAY (1) ')
 	}
@@ -181,6 +173,22 @@ fn (c mut V) compile() {
 #include <signal.h>
 #include <stdarg.h> // for va_list 
 #include <inttypes.h>  // int64_t etc 
+
+
+#ifdef __linux__ 
+#include <pthread.h> 
+#endif 
+
+
+#ifdef __APPLE__ 
+
+#endif 
+
+
+#ifdef _WIN32 
+#include <windows.h>
+//#include <WinSock2.h> 
+#endif 
 
 //================================== TYPEDEFS ================================*/ 
 
@@ -748,16 +756,42 @@ fn new_v(args[]string) *V {
 	'int.v',
 	'utf8.v',
 	'map.v',
-	'smap.v',
 	'option.v',
 	'string_builder.v',
 	]
-	// Location of all vlib files  TODO allow custom location
-	mut lang_dir = os.home_dir() + '/code/v/'
-	if !os.dir_exists(lang_dir) {
-		println('$lang_dir not found. Run:')
-		println('git clone https://github.com/vlang/v ~/code/v') 
-		exit(1) 
+	// Location of all vlib files
+	mut lang_dir = ''
+	// First try fetching it from VROOT if it's defined
+	vroot_path := TmpPath + '/VROOT'
+	if os.file_exists(vroot_path) {
+		vroot := os.read_file(vroot_path).trim_space()
+		if os.dir_exists(vroot) && os.dir_exists(vroot + '/builtin') {
+			lang_dir = vroot
+		}
+	}
+	// no "~/.vlang/VROOT" file, so the user must be running V for the first 
+	// time.
+	if lang_dir == ''  {
+		println('Looks like you are running V for the first time.')
+		// The parent directory should contain vlib if V is run
+		// from "v/compiler"
+		cur_dir := os.getwd()
+		lang_dir = cur_dir.all_before_last('/')
+		if os.dir_exists('$lang_dir/builtin') {
+			println('Setting VROOT to "$lang_dir".')
+			os.write_file(TmpPath + '/VROOT', lang_dir)
+		} else {
+			println('V repo not found. Cloning...') 
+			os.mv('v', 'v.bin') 
+			os.system('git clone https://github.com/vlang/v') 
+			if !os.dir_exists('v') {
+				println('failed to clone github.com/vlang/v') 
+				exit(1) 
+			} 
+			os.mv('v.bin', 'v/compiler/v') 
+			println('Re-launch V from v/compiler') 
+			exit(1) 
+		}
 	} 
 	out_name_c := out_name.all_after('/') + '.c'
 	mut files := []string
@@ -799,6 +833,7 @@ fn new_v(args[]string) *V {
 		build_mode: build_mode
 		is_run: args.contains('run')
 		is_repl: args.contains('-repl')
+		vroot: lang_dir
 	}
 }
 
@@ -838,20 +873,26 @@ fn run_repl() []string {
 // This definitely needs to be better :)
 const (
 	HelpText = '
-- To build a V program:
+- Build a V program:
 v file.v
 
-- To get current V version:
+- Get current V version:
 v version
 
-- To build an optimized executable:
+- Build an optimized executable:
 v -prod file.v
 
-- To specify the executable\'s name:
+- Specify the executable\'s name:
 v -o program file.v 
 
-- To build and execute a V program :
+- Build and execute a V program:
 v run file.v
+
+- Obfuscate the resulting binary:
+v -obf -prod build file.v
+
+- Test: 
+v string_test.v 
 '
 )
 
